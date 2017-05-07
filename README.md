@@ -30,7 +30,7 @@ an example is like this :
 Properties act as an Observable and / or Observer, an example is as follows :
 
     Property<Integer> observable = new Property<>(10);
-    final Property<Integer> observer = new Property<>(0);    
+    Property<Integer> observer = new Property<>(0);    
     observable.asObservable().subscribe(observer);
     
     
