@@ -1,7 +1,7 @@
 # RxProperties
 a library that provides the "Property" concept to Java, in a reactive manner, for every Property, it has it's own set() and get() method, all you have to do is to declare the variable as 
 
-    public final Property<MyObject> myObjectProperty = new Property(new MyObject());
+    public final Property<MyObject> myObjectProperty = new Property<>(new MyObject());
     
 then you can use this property as follows :
 
