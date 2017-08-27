@@ -13,15 +13,16 @@ public class MainActivity extends AppCompatActivity
 {
 
     private final CompositeDisposable disposables = new CompositeDisposable();
-    private final MainViewModel viewModel = new MainViewModel();
+    private MainViewModel viewModel;
     private TextView textView;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-        textView = (TextView) findViewById(R.id.text_view);
+        viewModel = ViewModel.of(getSupportFragmentManager(), MainViewModel.class);
 
+        textView = (TextView) findViewById(R.id.text_view);
         disposables.add(viewModel.textViewLabel.asObservable().subscribe(updateTextView()));
         disposables.add(viewModel.toastMessage.asObservable().subscribe(showToast()));
 
@@ -58,7 +59,7 @@ public class MainActivity extends AppCompatActivity
     @Override
     protected void onDestroy() {
         disposables.clear();
-        viewModel.clear();
+        viewModel.onDestroy();
         textView = null;
         super.onDestroy();
     }
