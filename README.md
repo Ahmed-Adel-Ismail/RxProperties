@@ -149,9 +149,9 @@ other functions are :
 	
 	flatMap() : converts Property into another Property
 	
-	asObservable() : creates an Observable that emits an item when ever the Property is updated
+	asObservable() : creates an Observable that emits an item when ever the Property is updated, also if the Property already contained a value, it will be emitted as soon as an Observer is subscribed
 	
-	asObservableFromIterable() : if the Property holds a List of items, this method returns an Observable that iterates over the items and emits them
+	asObservableFromIterable() : if the Property holds a List of items, this method returns an Observable that iterates over the items and emits them, also if the Property already contained a value, it will be emitted as soon as an Observer is subscribed
 	
 	asMaybe() : creates a Maybe that emits an item if the Property holds any, or it will be empty if the property does not hold any value
 	
