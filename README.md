@@ -136,7 +136,7 @@ and our Activity will look like this :
 
 This means that we wont have to care about checking the Values in Properties any more, they are similar to a "ReplaySubject" but with only one item, and it can maintain it's state properly, and it's Property.clear() method handles every thing
 
-notice that in the previous example we made Disposables and they should have been disposed in onDestroy(), but this is not put to focus on the main idea
+notice that in the previous example we made Disposables and they should have disposed them in onDestroy(), but this is not put to focus on the main idea
 
 # Gradle Dependency
 
