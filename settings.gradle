@@ -1,1 +1,1 @@
-include ':RxProperties'
+include ':RxProperties', ':app'

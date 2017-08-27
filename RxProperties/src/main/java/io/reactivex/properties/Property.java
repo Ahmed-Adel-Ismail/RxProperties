@@ -1,15 +1,20 @@
 package io.reactivex.properties;
 
+
 import java.util.Collection;
 import java.util.concurrent.Callable;
 
+import io.reactivex.Maybe;
 import io.reactivex.Observable;
 import io.reactivex.ObservableEmitter;
 import io.reactivex.ObservableOnSubscribe;
+import io.reactivex.annotations.NonNull;
+import io.reactivex.functions.BiFunction;
 import io.reactivex.functions.Consumer;
 import io.reactivex.functions.Function;
 import io.reactivex.functions.Predicate;
 import io.reactivex.properties.exceptions.InvocationException;
+import io.reactivex.properties.exceptions.RuntimeExceptionConverter;
 
 /**
  * a class that acts as a property, it holds it's {@link #set(Object)} and {@link #get()}
@@ -21,19 +26,29 @@ public class Property<T> implements
         Callable<T>,
         Consumer<T>,
         Clearable,
-        Emptyable {
+        Emptyable
+{
 
 
     T object;
+    private Class<?> type;
     private Predicate<T> filter;
+    private BiFunction<T, T, T> onSet;
     private Function<T, T> onGet;
     private Consumer<T> onUpdate;
-    private Function<T, T> onAccept;
+    private Consumer<T> onClear;
+    private Function<T, T> onConsumerAccept;
     private final EmittersGroup<T> emitters = new EmittersGroup<>();
 
 
+    public Property() {
+    }
+
     public Property(T object) {
         this.object = object;
+        if (object != null) {
+            type = object.getClass();
+        }
     }
 
     /**
@@ -44,34 +59,63 @@ public class Property<T> implements
      */
     public T set(T object) {
 
-        if (filter != null) {
-            try {
-                if (filter.test(object)) this.object = object;
-            } catch (Throwable e) {
-                throw new InvocationException("failed to execute set(" + object + ")", e);
-            }
-        } else {
-            this.object = object;
+        try {
+            doSet(object);
+        } catch (Throwable e) {
+            throw new InvocationException("failed to execute set(" + object + ")", e);
         }
 
         if (onUpdate != null) {
-            try {
-                onUpdate.accept(this.object);
-            } catch (Throwable e) {
-                throw new InvocationException("failed to execute onUpdate() inside filter("
-                        + object + ") ", e);
-            }
-
+            doUpdate(object);
         }
 
-        notifyEmittersWithValueSet(object);
+        if (!emitters.isEmpty()) {
+            notifyEmittersWithValueSet(object);
+        }
 
         return object;
     }
 
-    protected final void notifyEmittersWithValueSet(T object) {
-        if (object != null && !emitters.isEmpty()) {
-            emitters.onNext(get());
+
+    private void doSet(T object) throws Exception {
+        if (filter != null) {
+            if (filter.test(object)) {
+                setValue(object);
+            }
+        } else {
+            setValue(object);
+        }
+    }
+
+    private void setValue(T object) throws Exception {
+
+        if (onSet != null) {
+            this.object = onSet.apply(this.object, object);
+        } else {
+            this.object = object;
+        }
+
+        if (this.object != null) {
+            type = this.object.getClass();
+        }
+    }
+
+    private void doUpdate(T object) {
+        try {
+            onUpdate.accept(this.object);
+        } catch (Throwable e) {
+            throw new InvocationException("failed to execute onUpdate() inside filter("
+                    + object + ") ", e);
+        }
+    }
+
+    private void notifyEmittersWithValueSet(T object) {
+        if (object != null) {
+            try {
+                emitters.onNext(get());
+            } catch (Throwable e) {
+                emitters.onError(e);
+            }
         } else {
             emitters.onError(new NullPointerException("value set to null"));
         }
@@ -85,13 +129,17 @@ public class Property<T> implements
      */
     public T get() {
         if (onGet != null) {
-            try {
-                return onGet.apply(object);
-            } catch (Throwable e) {
-                throw new InvocationException("failed to execute get()", e);
-            }
+            return invokeOnGet();
         } else {
             return object;
+        }
+    }
+
+    private T invokeOnGet() {
+        try {
+            return onGet.apply(object);
+        } catch (Throwable e) {
+            throw new RuntimeExceptionConverter().apply(e);
         }
     }
 
@@ -142,6 +190,27 @@ public class Property<T> implements
     }
 
     /**
+     * set a {@link BiFunction} that will be executed when {@link #set(Object)} method is invoked,
+     * notice that this method will receive the old value as the first parameter, the
+     * new value as the second parameter, and will return the final value
+     * <p>
+     * this method is invoked if the set {@link #filter(Predicate)} returned {@code true}, or
+     * if {@link #filter(Predicate)} was not set
+     *
+     * @param onSet the {@link Function} that will be executed every time {@link #get()} method is
+     *              invoked, it will take the original value stored as a parameter, and it will
+     *              return the updated value as it's return value (which will then be returned
+     *              by the {@link #get()} method)
+     * @param <S>   the sub-class of this {@link Property}
+     * @return the sub-class of this {@link Property} to be used for chaining
+     */
+    @SuppressWarnings("unchecked")
+    public <S extends Property<T>> S onSet(BiFunction<T, T, T> onSet) {
+        this.onSet = onSet;
+        return (S) this;
+    }
+
+    /**
      * set a {@link Consumer} that will be executed when {@link #set(Object)} method finishes it's
      * invocation and the value is updated
      *
@@ -157,27 +226,40 @@ public class Property<T> implements
         return (S) this;
     }
 
+    /**
+     * set a {@link Consumer} that will be executed when {@link #clear()} method is invoked
+     *
+     * @param onClear the {@link Consumer} that will be executed
+     * @param <S>     the sub-class of this {@link Property}
+     * @return the sub-class of this {@link Property} to be used for chaining
+     */
+    @SuppressWarnings("unchecked")
+    public <S extends Property<T>> S onClear(Consumer<T> onClear) {
+        this.onClear = onClear;
+        return (S) this;
+    }
+
 
     /**
      * set an optional command that will be executed on the object passed to {@link #accept(Object)}
      * method, usually this is to modify / validate the objects received from Observables to this
      * {@link Property} when it is acting as a subscriber
      *
-     * @param onAccept the {@link Function} that will have it's returned value as the new
-     *                 value passed to {@link #set(Object)}
-     * @param <S>      the sub-class of this {@link Property}
+     * @param onConsumerAccept the {@link Function} that will have it's returned value as the new
+     *                         value passed to {@link #set(Object)}
+     * @param <S>              the sub-class of this {@link Property}
      * @return the sub-class of this {@link Property} to be used for chaining
      */
     @SuppressWarnings("unchecked")
-    public <S extends Property<T>> S onAccept(Function<T, T> onAccept) {
-        this.onAccept = onAccept;
+    public <S extends Property<T>> S onConsumerAccept(Function<T, T> onConsumerAccept) {
+        this.onConsumerAccept = onConsumerAccept;
         return (S) this;
     }
 
 
     /**
      * the default implementation for {@link Consumer} interface, which executes
-     * {@link #set(Object)} method as soon as it is invoked, if {@link #onAccept(Function)}
+     * {@link #set(Object)} method as soon as it is invoked, if {@link #onConsumerAccept(Function)}
      * has set a {@link Function}, it will be executed on the object passed, and it's
      * returned value will be the object to be passed to {@link #set(Object)} method
      *
@@ -185,14 +267,18 @@ public class Property<T> implements
      */
     @Override
     public void accept(T object) {
-        if (onAccept != null) {
-            try {
-                set(onAccept.apply(object));
-            } catch (Throwable e) {
-                throw new InvocationException("failed to execute accept(" + object + ")", e);
-            }
+        if (onConsumerAccept != null) {
+            invokeOnConsumerAccept(object);
         } else {
             set(object);
+        }
+    }
+
+    private void invokeOnConsumerAccept(T object) {
+        try {
+            set(onConsumerAccept.apply(object));
+        } catch (Throwable e) {
+            throw new InvocationException("failed to execute accept(" + object + ")", e);
         }
     }
 
@@ -201,14 +287,27 @@ public class Property<T> implements
         return object == null;
     }
 
+
     @Override
     public void clear() {
+        if (onClear != null) {
+            invokeOnClear();
+        }
         object = null;
         filter = null;
         onGet = null;
         onUpdate = null;
         emitters.onComplete();
         emitters.clear();
+    }
+
+    private void invokeOnClear() {
+        try {
+            onClear.accept(object);
+        } catch (Throwable e) {
+            throw new RuntimeExceptionConverter().apply(e);
+        }
+        onClear = null;
     }
 
 
@@ -220,16 +319,22 @@ public class Property<T> implements
      * {@link #asObservableFromIterable(Class)} instead
      */
     public Observable<T> asObservable() {
-        return Observable.create(new ObservableOnSubscribe<T>() {
+        return Observable.create(new ObservableOnSubscribe<T>()
+        {
             @Override
-            public void subscribe(ObservableEmitter<T> e) throws Exception {
-                emitters.add(e);
-                if (object != null) {
-                    emitters.onNext(get());
+            public void subscribe(@NonNull ObservableEmitter<T> e) throws Exception {
+                if (!emitters.contains(e)) {
+                    updateEmittersAndInvokeOnNextIfNotNull(e);
                 }
             }
-
         });
+    }
+
+    private void updateEmittersAndInvokeOnNextIfNotNull(ObservableEmitter<T> e) {
+        emitters.update(e);
+        if (object != null) {
+            e.onNext(get());
+        }
     }
 
     /**
@@ -260,5 +365,109 @@ public class Property<T> implements
         }
     }
 
+    /**
+     * map the value stored in this property to another value
+     *
+     * @param mapper the {@link Function} that will do the mapping
+     * @param <R>    the expected return type
+     * @return a mapped item
+     * @throws NullPointerException if the current value is {@code null}
+     */
+    public <R> R map(Function<T, R> mapper) throws NullPointerException {
+        if (object == null) {
+            throw new NullPointerException("null value");
+        }
+
+        try {
+            return mapper.apply(object);
+        } catch (Throwable e) {
+            throw new RuntimeExceptionConverter().apply(e);
+        }
+    }
+
+    /**
+     * map the value stored in this property to another {@link Property}
+     *
+     * @param mapper the {@link Function} that will do the mapping
+     * @param <R>    the expected return type
+     * @return a mapped item
+     * @throws NullPointerException if the current value is {@code null}
+     */
+    public <P extends Property<R>, R> P flatMap(Function<T, P> mapper) throws NullPointerException {
+        if (object == null) {
+            throw new NullPointerException("null value");
+        }
+
+        try {
+            return mapper.apply(object);
+        } catch (Throwable e) {
+            throw new RuntimeExceptionConverter().apply(e);
+        }
+    }
+
+
+    /**
+     * get the current value in this {@link Property} in a {@link Maybe}, this method invokes the
+     * {@link #get()} method
+     *
+     * @return if {@link #get()} returned {@code null},
+     * the {@link Maybe} will be empty, else it will return the value stored in this
+     * {@link Property} with it's {@code non-null} value
+     */
+    public Maybe<T> asMaybe() {
+        if (object != null) {
+            return Maybe.just(get());
+        } else {
+            return Maybe.empty();
+        }
+    }
+
+    /**
+     * get the current {@link Property} in a {@link Maybe} if the value in this {@link Property}
+     * is not {@code null}, this method does not invoke the {@link #get()} method
+     *
+     * @return if value stored in this {@link Property} is {@code null}
+     * the {@link Maybe} will be empty, else it will a {@link Maybe} of this
+     * {@link Property} with it's {@code non-null} value
+     */
+    public Maybe<Property<T>> asMaybeProperty() {
+        if (object != null) {
+            return Maybe.just(this);
+        } else {
+            return Maybe.empty();
+        }
+    }
+
+    /**
+     * create a {@link Consumer} that invokes {@link #set(Object)} every time it is updated
+     *
+     * @param mapper the {@link Function} that converts the passed value to the type that
+     *               can be passed to {@link #set(Object)} method
+     * @param <V>    the type that will be passed to the {@link Consumer}
+     * @return a {@link Consumer} that uses the mapper {@link Function} to convert any passed
+     * object to another object that will be passed to the {@link #set(Object)} immediatly
+     */
+    public <V> Consumer<V> asConsumer(final Function<V, T> mapper) {
+        return new Consumer<V>()
+        {
+            @Override
+            public void accept(@NonNull V v) throws Exception {
+                set(mapper.apply(v));
+            }
+        };
+    }
+
+    /**
+     * get the {@link Class} type of the object stored in this {@link Property}
+     * @return a {@link Maybe} holding the {@link Class} type of the value in this {@link Property}
+     * if available, or empty if not set yet
+     */
+    Maybe<? extends Class<?>> getType() {
+        if (type != null) {
+            return Maybe.just(type);
+        } else {
+            return Maybe.empty();
+        }
+    }
 
 }

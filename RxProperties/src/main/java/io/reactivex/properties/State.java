@@ -13,6 +13,9 @@ import io.reactivex.properties.exceptions.StateIsMovingToNullException;
 public class State<T extends SwitchableState<T>> extends Property<T> implements SwitchableState<T> {
 
 
+    State() {
+    }
+
     public State(@NonNull T object) {
         super(object);
     }

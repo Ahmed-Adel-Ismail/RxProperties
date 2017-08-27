@@ -7,6 +7,10 @@ package io.reactivex.properties;
  */
 public class BooleanProperty extends Property<Boolean> {
 
+    public BooleanProperty() {
+        super(false);
+    }
+
     public BooleanProperty(boolean object) {
         super(object);
     }
