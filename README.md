@@ -24,7 +24,94 @@ no need for setter or getter methods
 
 # Advanced Usage for Properties
 
-you can add your own code inside the set() and get() methods through methods like filter(), onUpdate(), and onGet()
+you can add your own code through functions that will be executed at later when there action happens
+
+these are the methods from the Property.java :
+
+	/**
+     * set a {@link Predicate} that will be executed when {@link #set(Object)} method is invoked to
+     * filter it, it wont update the current value if it returned {@code false}
+     *
+     * @param filter the {@link Predicate} that will be executed every time {@link #set(Object)}
+     *               method is invoked, it will take the original value passed as a parameter, and it
+     *               will return {@code true} if the value is accepted, or {@code false} if the
+     *               value is not
+     * @return the sub-class of this {@link Property} to be used for chaining
+     */
+    @SuppressWarnings("unchecked")
+    public <S extends Property<T>> S filter(Predicate<T> filter) {
+        this.filter = filter;
+        return (S) this;
+    }
+
+    /**
+     * set a {@link BiFunction} that will be executed when {@link #set(Object)} method is invoked,
+     * notice that this method will receive the old value as the first parameter, the
+     * new value as the second parameter, and will return the final value
+     * <p>
+     * this method is invoked if the set {@link #filter(Predicate)} returned {@code true}, or
+     * if {@link #filter(Predicate)} was not set
+     *
+     * @param onSet the {@link Function} that will be executed every time {@link #get()} method is
+     *              invoked, it will take the original value stored as a parameter, and it will
+     *              return the updated value as it's return value (which will then be returned
+     *              by the {@link #get()} method)
+     * @param <S>   the sub-class of this {@link Property}
+     * @return the sub-class of this {@link Property} to be used for chaining
+     */
+    @SuppressWarnings("unchecked")
+    public <S extends Property<T>> S onSet(BiFunction<T, T, T> onSet) {
+        this.onSet = onSet;
+        return (S) this;
+    }
+    
+	/**
+     * set a {@link Consumer} that will be executed when {@link #set(Object)} method finishes it's
+     * invocation and the value is updated
+     *
+     * @param onUpdate the {@link Consumer} that will be executed every time {@link #set(Object)}
+     *                 method is invoked and finished, it will take the final value updated in this
+     *                 instance, notice that this is invoked after the value is updated
+     * @param <S>      the sub-class of this {@link Property}
+     * @return the sub-class of this {@link Property} to be used for chaining
+     */
+    @SuppressWarnings("unchecked")
+    public <S extends Property<T>> S onUpdate(Consumer<T> onUpdate) {
+        this.onUpdate = onUpdate;
+        return (S) this;
+    }
+    
+	/**
+     * set a {@link Function} that will be executed when {@link #get()} method is invoked,
+     * notice that this method may receive {@code null} if no current value is set in this
+     * {@link Property}
+     *
+     * @param onGet the {@link Function} that will be executed every time {@link #get()} method is
+     *              invoked, it will take the original value stored as a parameter, and it will
+     *              return the updated value as it's return value (which will then be returned
+     *              by the {@link #get()} method)
+     * @param <S>   the sub-class of this {@link Property}
+     * @return the sub-class of this {@link Property} to be used for chaining
+     */
+    @SuppressWarnings("unchecked")
+    public <S extends Property<T>> S onGet(Function<T, T> onGet) {
+        this.onGet = onGet;
+        return (S) this;
+    }	
+	
+	/**
+     * set a {@link Consumer} that will be executed when {@link #clear()} method is invoked
+     *
+     * @param onClear the {@link Consumer} that will be executed
+     * @param <S>     the sub-class of this {@link Property}
+     * @return the sub-class of this {@link Property} to be used for chaining
+     */
+    @SuppressWarnings("unchecked")
+    public <S extends Property<T>> S onClear(Consumer<T> onClear) {
+        this.onClear = onClear;
+        return (S) this;
+    }
+	
 
 an example for a property that accepts only even numbers :
 
@@ -36,19 +123,48 @@ an example for a property that accepts only even numbers :
         }
     })
 
+# RxJava2 related functions :
 
-# RxJava2 Observable, Maybe & Observer 
+Properties already implements the Consumer interface, so they can be used in RxJava's onNext() or onError(), and you set a function that will be executed every time the accept() method is invoked through "onConsumerAccept()" method :
 
-Properties act as an Observable, Maybe and Observer, an example is as follows :
+	/**
+     * set an optional command that will be executed on the object passed to {@link #accept(Object)}
+     * method, usually this is to modify / validate the objects received from Observables to this
+     * {@link Property} when it is acting as a subscriber
+     *
+     * @param onConsumerAccept the {@link Function} that will have it's returned value as the new
+     *                         value passed to {@link #set(Object)}
+     * @param <S>              the sub-class of this {@link Property}
+     * @return the sub-class of this {@link Property} to be used for chaining
+     */
+    @SuppressWarnings("unchecked")
+    public <S extends Property<T>> S onConsumerAccept(Function<T, T> onConsumerAccept) {
+        this.onConsumerAccept = onConsumerAccept;
+        return (S) this;
+    }
+	
+other functions are :
+	
+	map() : converts Property into another value
+	
+	flatMap() : converts Property into another Property
+	
+	asObservable() : creates an Observable that emits an item when ever the Property is updated
+	
+	asObservableFromIterable() : if the Property holds a List of items, this method returns an Observable that iterates over the items and emits them
+	
+	asMaybe() : creates a Maybe that emits an item if the Property holds any, or it will be empty if the property does not hold any value
+	
+	asMaybeProperty() : creates a Maybe that will emit the current property if it's value is not null, else it will be an empty Maybe
+	
+	asConsumer() : creates a Consumer with a mapper function, where this function converts the emitted item into the type of the property, so the Property can observe on an Observable of a different type, and every time this Observable emits an item, the mapper function converts the emitted item to the type of the observer property
+
+an exmaple of asObservable will be : 
 
     Property<Integer> observable = new Property<>(10);
     Property<Integer> observer = new Property<>(0);    
     observable.asObservable().subscribe(observer);
-    
-Properties also have methods like asMaybe(), which returns the Property as a Maybe, which will emit the item in the Property if it is available, or will invoke Maybe.empty() if it has no value in it yet
-
-
-    
+       
 # The power of MVVM pattern
 
 Properties makes it very easy to implement the MVVM pattern, specially when they are used in a ViewModel that does not lose it's state over rotation, every time the Views do Subscribe to them in the onCreate() method, they will be notified with the last available value in the Property ... if you dont want this behavior you can use "Consumable.java" which acts as a one-time storage to a value, once the value in it is consumed (or emitted in onNext()), it returns back to null and does not emit / notify with any values unless it is updated again ... an example of the MVVM pattern with Properties is as follows 
