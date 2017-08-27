@@ -20,9 +20,11 @@ public class MainActivity extends AppCompatActivity
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-        viewModel = ViewModel.of(getSupportFragmentManager(), MainViewModel.class);
-
         textView = (TextView) findViewById(R.id.text_view);
+
+        viewModel = Model.of(this, MainViewModel.class);
+        viewModel.textViewLabel.set(viewModel.randomLabel());
+
         disposables.add(viewModel.textViewLabel.asObservable().subscribe(updateTextView()));
         disposables.add(viewModel.toastMessage.asObservable().subscribe(showToast()));
 
@@ -50,16 +52,10 @@ public class MainActivity extends AppCompatActivity
         };
     }
 
-    protected void onResume() {
-        super.onResume();
-        viewModel.textViewLabel.set(viewModel.randomLabel());
-    }
-
-
     @Override
     protected void onDestroy() {
         disposables.clear();
-        viewModel.onDestroy();
+        viewModel.clear(this);
         textView = null;
         super.onDestroy();
     }

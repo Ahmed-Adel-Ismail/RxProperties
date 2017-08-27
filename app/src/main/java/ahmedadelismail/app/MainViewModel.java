@@ -6,7 +6,7 @@ import io.reactivex.properties.Property;
 /**
  * Created by Ahmed Adel Ismail on 8/27/2017.
  */
-public class MainViewModel extends ViewModel
+public class MainViewModel extends Model
 {
 
 
@@ -20,10 +20,9 @@ public class MainViewModel extends ViewModel
     }
 
     @Override
-    public void onDestroy() {
+    protected void clear() {
         textViewLabel.clear();
         toastMessage.clear();
-        super.onDestroy();
     }
 
 }
