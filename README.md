@@ -10,11 +10,23 @@ then you can use this property as follows :
 
 no need for setter or getter methods
 
+# Properties Types
+
+    - Property          :   the base class of the different variations of Property
+    - Consumable        :   a Property that when it's get() method is invoked, it returns it's value to null, this helps replacing the 
+                            flags that we keep setting to true and false in the life cycle events
+    - BooleanProperty   :   a property that holds boolean value, this property has a default value as "false", should not be used when
+                            dealing with the Property as an Observable or Maybe, since it will emit a "false" when you subscribe to it
+    - State             :   a Property that implements the State-Pattern, it holds an Object that implements SwitchableState interface, 
+                            an interface that has 2 methods, next() and back(), where every value knows it's next state and it's 
+                            previous state ... this can be useful when switching data with ViewPagers and every value is mapped to a 
+                            fragment for example
+
 # Advanced Usage for Properties
 
 you can add your own code inside the set() and get() methods through methods like filter(), onUpdate(), and onGet()
 
-an example is like this :
+an example for a property that accepts only even numbers :
 
     Property<Integer> evenNumbers = new Property<>(0);
     evenNumbers.filter(new Predicate<Integer>() {
@@ -25,138 +37,122 @@ an example is like this :
     })
 
 
-# RxJava2 Observable & Observer 
+# RxJava2 Observable, Maybe & Observer 
 
-Properties act as an Observable and / or Observer, an example is as follows :
+Properties act as an Observable, Maybe and Observer, an example is as follows :
 
     Property<Integer> observable = new Property<>(10);
     Property<Integer> observer = new Property<>(0);    
     observable.asObservable().subscribe(observer);
     
+Properties also have methods like asMaybe(), which returns the Property as a Maybe, which will emit the item in the Property if it is available, or will invoke Maybe.empty() if it has no value in it yet
+
+
     
-# More Use case examples from the PropertyTest.java
+# The power of MVVM pattern
 
+Properties makes it very easy to implement the MVVM pattern, specially when they are used in a ViewModel that does not lose it's state over rotation, every time the Views do Subscribe to them in the onCreate() method, they will be notified with the last available value in the Property ... if you dont want this behavior you can use "Consumable.java" which acts as a one-time storage to a value, once the value in it is consumed (or emitted in onNext()), it returns back to null and does not emit / notify with any values unless it is updated again ... an example of the MVVM pattern with Properties is as follows 
+
+# Create the ViewModel that keeps it's state while rotating
+
+There is a Gist i wrote that shows how to make the Model (ViewModel parent class) survive rotation : https://gist.github.com/Ahmed-Adel-Ismail/c0ec1ed6c8d37c931b3bf42b22430246
+
+now The ViewModel will look like this :
+
+    public class MainViewModel extends Model {
     
-    @Test
-    public void filterNumbersFromSingleObservableAndAcceptEvenNumbers() throws Exception {
-        Property<Integer> allNumbers = new Property<>(0);
-        Property<Integer> evenNumbers = new Property<>(0);
-        evenNumbers.filter(new Predicate<Integer>() {
-            @Override
-            public boolean test(@NonNull Integer integer) throws Exception {
-                return integer % 2 == 0;
-            }
-        });
+        final Property<String> textViewLabel = new Property<>();
+        final Consumable<String> toastMessage = new Consumable<>("started");
 
-        allNumbers.asObservable().subscribe(evenNumbers);
-        allNumbers.set(1);
-        assertTrue(evenNumbers.get() == 0);
-        allNumbers.set(2);
-        assertTrue(evenNumbers.get() == 2);
-        allNumbers.set(3);
-        assertTrue(evenNumbers.get() == 2);
-        allNumbers.set(4);
-        assertTrue(evenNumbers.get() == 4);
+        final String randomLabel() {
+            return (int) (Math.random() * 10) % 2 == 0
+                    ? "Even number label"
+                    : "Odd number label";
+        }
 
+        @Override
+        protected void clear() {
+            textViewLabel.clear();
+            toastMessage.clear();
+        }
     }
 
-    @Test
-    public void filterNumbersFromIterableObservableAndAcceptEvenNumbers() throws Exception {
+and our Activity will look like this :
 
-        Property<List<Integer>> allNumbers = new Property<>(Arrays.asList(1, 2, 3, 4));
-        Property<Integer> evenNumbers = new Property<>(0);
+    public class MainActivity extends AppCompatActivity {
 
-        evenNumbers.filter(new Predicate<Integer>() {
-            @Override
-            public boolean test(@NonNull Integer integer) throws Exception {
-                return integer % 2 == 0;
-            }
-        }).onUpdate(new Consumer<Integer>() {
-            @Override
-            public void accept(@NonNull Integer integer) throws Exception {
-                assertTrue(integer % 2 == 0);
-            }
-        });
+        private MainViewModel viewModel;
+        private TextView textView;
 
+        @Override
+        protected void onCreate(Bundle savedInstanceState) {
+            super.onCreate(savedInstanceState);
+            setContentView(R.layout.activity_main);
+            textView = (TextView) findViewById(R.id.text_view);
+            viewModel = Model.of(this, MainViewModel.class);
+            
+            // notice that we set the textViewLabel value before we subscribe any views
+            viewModel.textViewLabel.set(viewModel.randomLabel()); 
+            
+            // now as soon as we subscribe to the textViewLabel, it will emit the stored value in it
+            viewModel.textViewLabel.asObservable().subscribe(updateTextView());
+            
+            // since the toastMessage is Consumable, it will emit the value in it just one time ,
+            // and after this in every rotation nothing will happen, unlike the textViewLabel that 
+            // will still hold the value in it across rotations
+            viewModel.toastMessage.asObservable().subscribe(showToast());
+        }
 
-        allNumbers.asObservableFromIterable(Integer.class).subscribe(evenNumbers);
-        assertTrue(evenNumbers.get() == 4);
+        @NonNull
+        private Consumer<String> updateTextView() {
+            return new Consumer<String>()
+            {
+                @Override
+                public void accept(String s) throws Exception {
+                    textView.setText(s);
+                }
+            };
+        }
 
+        private Consumer<? super String> showToast() {
+            return new Consumer<String>()
+            {
+                @Override
+                public void accept(String s) throws Exception {
+                    Toast.makeText(MainActivity.this, s, Toast.LENGTH_SHORT).show();
+                }
+            };
+        }
+
+        @Override
+        protected void onDestroy() {
+            // this clear wont actually take effect unless the Activity is actually destroyed, not rotating
+            viewModel.clear(this);
+            textView = null;
+            super.onDestroy();
+        }
     }
 
 
-    @Test
-    public void asObservableWithInitialValue() throws Exception {
-        final Property<Integer> result = new Property<>(0);
-        Property<Integer> property = new Property<>(10);
-        property.asObservable().subscribe(result);
-        assertTrue(result.get().equals(10));
-    }
+This means that we wont have to care about checking the Values in Properties any more, they are similar to a "ReplaySubject" but with only one item, and it can maintain it's state properly, and it's Property.clear() method handles every thing
 
-    @Test
-    public void asObservableWithLazySetValue() throws Exception {
-        final Property<Integer> result = new Property<>(0);
-        Property<Integer> property = new Property<>(0);
-        property.asObservable().subscribe(result);
-        property.set(20);
-        assertTrue(result.get().equals(20));
-    }
+notice that in the previous example we made Disposables and they should have been disposed in onDestroy(), but this is not put to focus on the main idea
 
-    @Test
-    public void asObservableThenDisposeThenSetValueAgain() throws Exception {
-        final Property<Integer> result = new Property<>(0);
-        result.onAccept(new Function<Integer, Integer>() {
-            @Override
-            public Integer apply(Integer integer) {
-                System.out.println(integer);
-                result.set(result.get() + integer);
-                return integer;
-            }
-        });
+# Gradle Dependency
 
+Step 1. Add the JitPack repository to your build file
 
-        Property<Integer> property = new Property<>(0);
-        Disposable d = property.asObservable().subscribe(result);
+Add it in your root build.gradle at the end of repositories:
 
-
-        property.set(20);
-        d.dispose();
-        property.set(30);
-
-
-        assertTrue(result.get() == 20);
-    }
-
-    @Test
-    public void asObservableForTwoSubscribersAndBothAreUpdated() throws Exception {
-        final Property<Integer> resultOne = new Property<>(0);
-        final Property<Integer> resultTwo = new Property<>(0);
-
-        Property<Integer> property = new Property<>(0);
-        property.asObservable().subscribe(resultOne);
-        property.asObservable().subscribe(resultTwo);
-
-        property.set(20);
-
-        assertTrue(resultOne.get().equals(resultTwo.get()) && resultOne.get().equals(20));
-    }
-
-    @Test
-    public void asIterableObservable() throws Exception {
-        final BooleanProperty result = new BooleanProperty(false);
-        Property<ArrayList<String>> property = new Property<>(new ArrayList<String>());
-        property.get().add("A");
-        property.get().add("B");
-        property.get().add("C");
-        property.get().add("D");
-
-        property.asObservableFromIterable(String.class).forEach(new Consumer<String>() {
-            @Override
-            public void accept(String s) throws Exception {
-                System.out.println(s);
-                result.set(true);
-            }
-        });
-        assertTrue(result.isTrue());
-    }
-
+    allprojects {
+		repositories {
+			...
+			maven { url 'https://jitpack.io' }
+		}
+	}
+    
+Step 2. Add the dependency
+	
+    dependencies {
+	        compile 'com.github.Ahmed-Adel-Ismail:RxProperties:0.0.1'
+	}
